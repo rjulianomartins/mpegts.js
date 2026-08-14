@@ -216,9 +216,6 @@ class AcademicSceneCompositionPlayer extends SceneCompositionPlayer {
                 sourceBuffer.timestampOffset = desiredOffset;
             }
 
-            // Keep each Scene's coded frames inside its authored logical range.
-            // This prevents codec delay or fragment tails from extending the native
-            // Firefox Compilation timeline beyond the declared Scene duration.
             sourceBuffer.appendWindowStart = Math.max(0, scene.timelineStart);
             sourceBuffer.appendWindowEnd = Math.max(scene.timelineStart + 0.001, scene.timelineEnd);
 
@@ -241,6 +238,68 @@ class AcademicSceneCompositionPlayer extends SceneCompositionPlayer {
                 }
             }
         });
+    }
+
+    _cleanupOldBuffer() {
+        if (!this._source_buffer || !this._media_element || !this._config.maxBufferBehindSeconds) {
+            return;
+        }
+
+        const nowClock = Date.now() / 1000;
+        if (nowClock - this._last_cleanup_clock < this._config.cleanupIntervalSeconds) {
+            return;
+        }
+        this._last_cleanup_clock = nowClock;
+
+        const desiredCutoff = this._media_element.currentTime - this._config.maxBufferBehindSeconds;
+        if (desiredCutoff <= 1 || !this._scenes.length) {
+            return;
+        }
+
+        // Evict only at authored Scene boundaries. Never cut through an fMP4
+        // fragment: partially removed fragments are unsafe to keep marked loaded
+        // and can break a later backward seek.
+        let safeCutoff = 0;
+        for (let index = 0; index < this._scenes.length; index += 1) {
+            const scene = this._scenes[index];
+            if (scene.timelineEnd <= desiredCutoff + 0.001) {
+                safeCutoff = scene.timelineEnd;
+            } else {
+                break;
+            }
+        }
+        if (safeCutoff <= 0) {
+            return;
+        }
+
+        let hasOldData = false;
+        const buffered = this._source_buffer.buffered;
+        for (let i = 0; i < buffered.length; i += 1) {
+            if (buffered.start(i) < safeCutoff - 0.001) {
+                hasOldData = true;
+                break;
+            }
+        }
+        if (!hasOldData) {
+            return;
+        }
+
+        this._enqueueAppend(async () => {
+            await this._removeBuffer(0, safeCutoff);
+            const evicted = [];
+            this._loaded_segments.forEach((key) => {
+                const parts = key.split(':');
+                const scene = this._scenes[Number(parts[0])];
+                if (scene && scene.timelineEnd <= safeCutoff + 0.001) {
+                    evicted.push(key);
+                }
+            });
+            evicted.forEach((key) => this._loaded_segments.delete(key));
+            this._emitter.emit('scene_buffer_evicted', {
+                before: safeCutoff,
+                segmentCount: evicted.length
+            });
+        }).catch((error) => this._emitError('BUFFER_CLEANUP_FAILED', error));
     }
 
     _installTitleTrack() {
