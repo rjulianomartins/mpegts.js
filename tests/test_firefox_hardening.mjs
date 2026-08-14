@@ -66,7 +66,9 @@ try {
     }, {
       keyboardSceneNavigation: false,
       showSceneTitles: false,
-      preloadAheadSeconds: 20
+      preloadAheadSeconds: 20,
+      maxBufferBehindSeconds: 0.5,
+      cleanupIntervalSeconds: 0
     });
     player.attachMediaElement(video);
     player.load();
@@ -93,11 +95,42 @@ try {
   if (replacement.textTracks !== 0) {
     throw new Error(`titles disabled but replacement has ${replacement.textTracks} TextTrack(s)`);
   }
+
+  // Move near the end, evict only the completed first Scene, then verify a
+  // backward seek reloads its three fragments and decodes it again.
+  await page.evaluate(() => {
+    video.currentTime = player.duration - 0.25;
+    player._cleanupOldBuffer();
+  });
+  await page.waitForFunction(() => player._loaded_segments && player._loaded_segments.size === 3, null, { timeout: 10000 });
+  const afterEviction = await page.evaluate(() => ({
+    loadedSegments: player._loaded_segments.size,
+    keys: Array.from(player._loaded_segments).sort()
+  }));
+  if (afterEviction.keys.some((key) => key.startsWith('0:'))) {
+    throw new Error(`Scene 1 fragments were not fully evicted: ${JSON.stringify(afterEviction)}`);
+  }
+
+  await page.evaluate(() => { player.currentTime = 0.75; });
+  await page.waitForFunction(() => player.currentSceneIndex === 0, null, { timeout: 15000 });
+  await page.waitForFunction(() => player._loaded_segments && player._loaded_segments.size === 6, null, { timeout: 15000 });
+  await page.waitForFunction(() => video.videoWidth === 640 && video.videoHeight === 360, null, { timeout: 15000 });
+  const afterReload = await page.evaluate(() => ({
+    loadedSegments: player._loaded_segments.size,
+    sceneIndex: player.currentSceneIndex,
+    width: video.videoWidth,
+    height: video.videoHeight,
+    mediaError: video.error ? { code: video.error.code, message: video.error.message || '' } : null
+  }));
+  if (afterReload.mediaError) {
+    throw new Error(`media error after backward reload: ${JSON.stringify(afterReload.mediaError)}`);
+  }
+
   if (browserErrors.length) {
     throw new Error(`browser errors: ${browserErrors.join(' | ')}`);
   }
 
-  console.log(JSON.stringify({ ok: true, topologyError, replacement }));
+  console.log(JSON.stringify({ ok: true, topologyError, replacement, afterEviction, afterReload }));
 } finally {
   await browser.close();
 }
