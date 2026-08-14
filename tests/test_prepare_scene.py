@@ -33,11 +33,14 @@ def main():
             "-c:a", "aac", "-shortest", str(source)
         ])
 
+        requested_start = 1.35
+        requested_end = 6.0
         run([
             sys.executable, str(helper), str(source), str(output),
-            "--start", "1.0", "--end", "6.0",
+            "--start", str(requested_start), "--end", str(requested_end),
             "--id", "ci-scene", "--title", "CI Scene",
-            "--source-id", "ci-source", "--segment-seconds", "2.0"
+            "--source-id", "ci-source", "--segment-seconds", "2.0",
+            "--keyframe-tolerance", "1.0"
         ])
 
         manifest = output / "scene.json"
@@ -51,6 +54,28 @@ def main():
             encoding="utf-8"
         )
         run([sys.executable, str(validator), str(wrapped_manifest)])
+
+        if not math.isclose(float(scene.get("requestedSourceStart")), requested_start, abs_tol=1e-6):
+            raise SystemExit("requestedSourceStart was not preserved")
+        if not math.isclose(float(scene.get("requestedSourceEnd")), requested_end, abs_tol=1e-6):
+            raise SystemExit("requestedSourceEnd was not preserved")
+
+        actual_start = float(scene.get("actualSourceStart"))
+        boundary_delta = float(scene.get("startBoundaryDelta"))
+        if abs(actual_start - requested_start) > 1.0 + 1e-6:
+            raise SystemExit("actual Scene start exceeded the 1s keyframe tolerance")
+        if not math.isclose(boundary_delta, actual_start - requested_start, abs_tol=1e-6):
+            raise SystemExit("startBoundaryDelta does not match requested vs actual start")
+        if math.isclose(actual_start, requested_start, abs_tol=0.01):
+            raise SystemExit("non-keyframe request unexpectedly reported an exact boundary")
+        if not math.isclose(float(scene.get("sourceStart")), actual_start, abs_tol=1e-6):
+            raise SystemExit("sourceStart must represent the actual prepared boundary")
+
+        actual_end = float(scene.get("actualSourceEnd"))
+        if not math.isclose(float(scene.get("sourceEnd")), actual_end, abs_tol=1e-6):
+            raise SystemExit("sourceEnd must represent the actual prepared boundary")
+        if not math.isclose(actual_end, actual_start + float(scene.get("duration")), abs_tol=0.02):
+            raise SystemExit("actualSourceEnd does not match actual start plus prepared duration")
 
         init_file = output / "init.mp4"
         if not init_file.exists() or init_file.stat().st_size == 0:
@@ -88,10 +113,23 @@ def main():
                 f"ffprobe={actual_media_start:.6f}"
             )
 
+        # A stricter tolerance must reject this deliberately non-keyframe request.
+        rejected = subprocess.run([
+            sys.executable, str(helper), str(source), str(tmp / "rejected"),
+            "--start", str(requested_start), "--end", str(requested_end),
+            "--id", "rejected", "--title", "Rejected",
+            "--keyframe-tolerance", "0.1"
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if rejected.returncode == 0:
+            raise SystemExit("helper accepted a Scene with no keyframe inside the configured tolerance")
+
         print(json.dumps({
             "ok": True,
             "segments": len(segments),
             "duration": scene.get("duration"),
+            "requestedStart": requested_start,
+            "actualStart": actual_start,
+            "boundaryDelta": boundary_delta,
             "mediaStart": declared_media_start,
             "mimeType": scene.get("mimeType")
         }))
