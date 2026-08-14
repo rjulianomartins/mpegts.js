@@ -86,6 +86,9 @@ try {
   if (!(initial.duration > 8 && initial.duration < 12)) {
     throw new Error(`unexpected compilation duration ${initial.duration}`);
   }
+  if (Math.abs(initial.duration - initial.logicalDuration) > 0.05) {
+    throw new Error(`native duration drift: native=${initial.duration} logical=${initial.logicalDuration}`);
+  }
   if (initial.sceneCount !== 2) {
     throw new Error(`unexpected scene count ${initial.sceneCount}`);
   }
