@@ -302,6 +302,48 @@ class AcademicSceneCompositionPlayer extends SceneCompositionPlayer {
         }).catch((error) => this._emitError('BUFFER_CLEANUP_FAILED', error));
     }
 
+    _onKeyDown(event) {
+        if (!this._ready || !this._config.keyboardSceneNavigation || !this._media_element) {
+            return;
+        }
+        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+            return;
+        }
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+            return;
+        }
+
+        const target = event.target;
+        if (target && target.tagName) {
+            const tag = String(target.tagName).toLowerCase();
+            if (tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable === true) {
+                return;
+            }
+        }
+
+        let playerContextActive = false;
+        if (typeof document !== 'undefined') {
+            const activeElement = document.activeElement;
+            const fullscreenElement = document.fullscreenElement;
+            playerContextActive = activeElement === this._media_element || fullscreenElement === this._media_element;
+        }
+        if (!playerContextActive) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        if (typeof event.stopImmediatePropagation === 'function') {
+            event.stopImmediatePropagation();
+        }
+
+        if (event.key === 'ArrowRight') {
+            this.nextScene();
+        } else {
+            this.previousScene();
+        }
+    }
+
     _installTitleTrack() {
         if (!this._config.showSceneTitles) {
             return;
