@@ -64,7 +64,7 @@ try {
       type: 'scenes',
       url: '.ci-scenes/compilation.json'
     }, {
-      keyboardSceneNavigation: false,
+      keyboardSceneNavigation: true,
       showSceneTitles: false,
       preloadAheadSeconds: 20,
       maxBufferBehindSeconds: 0.5,
@@ -126,11 +126,36 @@ try {
     throw new Error(`media error after backward reload: ${JSON.stringify(afterReload.mediaError)}`);
   }
 
+  // Arrow keys belong to Scene navigation only when the native video itself is
+  // the active player context. Other page controls must keep their arrows.
+  await page.locator('#load').focus();
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(100);
+  const unrelatedControlScene = await page.evaluate(() => player.currentSceneIndex);
+  if (unrelatedControlScene !== 0) {
+    throw new Error(`ArrowRight changed Scene while unrelated control was focused: ${unrelatedControlScene}`);
+  }
+
+  await page.locator('#video').focus();
+  await page.keyboard.press('ArrowRight');
+  await page.waitForFunction(() => player.currentSceneIndex === 1, null, { timeout: 10000 });
+  const videoFocusedScene = await page.evaluate(() => player.currentSceneIndex);
+  if (videoFocusedScene !== 1) {
+    throw new Error(`ArrowRight did not navigate Scene while video was focused: ${videoFocusedScene}`);
+  }
+
   if (browserErrors.length) {
     throw new Error(`browser errors: ${browserErrors.join(' | ')}`);
   }
 
-  console.log(JSON.stringify({ ok: true, topologyError, replacement, afterEviction, afterReload }));
+  console.log(JSON.stringify({
+    ok: true,
+    topologyError,
+    replacement,
+    afterEviction,
+    afterReload,
+    keyboard: { unrelatedControlScene, videoFocusedScene }
+  }));
 } finally {
   await browser.close();
 }
