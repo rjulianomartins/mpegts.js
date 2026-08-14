@@ -4,29 +4,72 @@ const base = process.env.SCENE_TEST_BASE || 'http://127.0.0.1:8765';
 const browser = await firefox.launch({ headless: true });
 const page = await browser.newPage();
 const errors = [];
-page.on('pageerror', (error) => errors.push(String(error)));
+page.on('pageerror', (error) => errors.push(`pageerror: ${String(error)}`));
 page.on('console', (message) => {
-  if (message.type() === 'error') errors.push(message.text());
+  if (message.type() === 'error') errors.push(`console: ${message.text()}`);
 });
+
+async function snapshot() {
+  return page.evaluate(() => {
+    const v = document.getElementById('video');
+    const status = document.getElementById('status')?.textContent || '';
+    const mediaError = v && v.error ? { code: v.error.code, message: v.error.message || '' } : null;
+    let playerState = null;
+    try {
+      playerState = player ? {
+        sceneCount: player.sceneCount,
+        currentSceneIndex: player.currentSceneIndex,
+        currentTime: player.currentTime,
+        duration: player.duration,
+        loadError: player._load_error ? String(player._load_error.message || player._load_error) : null,
+        ready: player._ready === true,
+        activeMimeType: player._active_mime_type || null,
+        loadedSegments: player._loaded_segments ? player._loaded_segments.size : null
+      } : null;
+    } catch (e) {
+      playerState = { inspectError: String(e) };
+    }
+    return {
+      status,
+      media: v ? {
+        readyState: v.readyState,
+        networkState: v.networkState,
+        duration: v.duration,
+        currentTime: v.currentTime,
+        currentSrc: v.currentSrc,
+        error: mediaError
+      } : null,
+      player: playerState
+    };
+  });
+}
 
 try {
   await page.goto(`${base}/demo/academic-scene.html`, { waitUntil: 'networkidle' });
   await page.fill('#manifest', '.ci-scenes/compilation.json');
   await page.click('#load');
 
-  await page.waitForFunction(() => {
-    const text = document.querySelector('#status')?.textContent || '';
-    return text.includes('"event": "ready"');
-  }, null, { timeout: 30000 });
+  try {
+    await page.waitForFunction(() => {
+      const text = document.querySelector('#status')?.textContent || '';
+      return text.includes('"event": "ready"') || text.includes('"event": "error"');
+    }, null, { timeout: 30000 });
+  } catch (error) {
+    const state = await snapshot();
+    throw new Error(`ready timeout: ${JSON.stringify({ state, errors }, null, 2)}`);
+  }
 
-  const initial = await page.evaluate(() => {
-    return {
-      duration: video.duration,
-      sceneCount: player.sceneCount,
-      currentSceneIndex: player.currentSceneIndex,
-      buffered: Array.from({ length: video.buffered.length }, (_, i) => [video.buffered.start(i), video.buffered.end(i)])
-    };
-  });
+  const firstState = await snapshot();
+  if (firstState.status.includes('"event": "error"')) {
+    throw new Error(`player reported error before ready: ${JSON.stringify({ state: firstState, errors }, null, 2)}`);
+  }
+
+  const initial = await page.evaluate(() => ({
+    duration: video.duration,
+    sceneCount: player.sceneCount,
+    currentSceneIndex: player.currentSceneIndex,
+    buffered: Array.from({ length: video.buffered.length }, (_, i) => [video.buffered.start(i), video.buffered.end(i)])
+  }));
 
   if (!(initial.duration > 8 && initial.duration < 12)) {
     throw new Error(`unexpected compilation duration ${initial.duration}`);
