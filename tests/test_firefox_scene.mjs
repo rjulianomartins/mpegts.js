@@ -51,8 +51,8 @@ try {
 
   try {
     await page.waitForFunction(() => {
-      const text = document.querySelector('#status')?.textContent || '';
-      return text.includes('"event": "ready"') || text.includes('"event": "error"');
+      if (!player) return false;
+      return player._ready === true || player._load_error != null;
     }, null, { timeout: 30000 });
   } catch (error) {
     const state = await snapshot();
@@ -60,8 +60,11 @@ try {
   }
 
   const firstState = await snapshot();
-  if (firstState.status.includes('"event": "error"')) {
-    throw new Error(`player reported error before ready: ${JSON.stringify({ state: firstState, errors }, null, 2)}`);
+  if (firstState.player?.loadError) {
+    throw new Error(`player reported load error: ${JSON.stringify({ state: firstState, errors }, null, 2)}`);
+  }
+  if (!firstState.player?.ready) {
+    throw new Error(`player did not become ready: ${JSON.stringify({ state: firstState, errors }, null, 2)}`);
   }
 
   const initial = await page.evaluate(() => ({
@@ -112,7 +115,7 @@ try {
     player.load();
   });
 
-  await page.waitForFunction(() => player && player.sceneCount === 2 && Number.isFinite(video.duration) && video.duration > 0, null, { timeout: 30000 });
+  await page.waitForFunction(() => player && player._ready === true && player.sceneCount === 2 && Number.isFinite(video.duration) && video.duration > 0, null, { timeout: 30000 });
 
   if (errors.length) {
     throw new Error(`browser errors: ${errors.join(' | ')}`);
