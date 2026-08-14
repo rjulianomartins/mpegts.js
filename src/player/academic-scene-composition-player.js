@@ -44,6 +44,8 @@ class AcademicSceneCompositionPlayer extends SceneCompositionPlayer {
         this._manifest_base_url = null;
         this._academic_generation = 0;
         this._academic_abort_controller = null;
+        this._academic_eos_pending = false;
+        this._academic_eos_finalized = false;
     }
 
     load() {
@@ -69,6 +71,8 @@ class AcademicSceneCompositionPlayer extends SceneCompositionPlayer {
     }
 
     unload() {
+        this._academic_eos_pending = false;
+        this._academic_eos_finalized = false;
         this._cancelAcademicGeneration();
         super.unload();
     }
@@ -209,6 +213,9 @@ class AcademicSceneCompositionPlayer extends SceneCompositionPlayer {
         const mediaData = await this._fetchArrayBuffer(segment);
 
         return this._enqueueAppend(async () => {
+            // appendBuffer() is allowed to reopen an MSE that was previously
+            // ended. Clear our completion latch whenever new data is required.
+            this._academic_eos_finalized = false;
             await this._ensureSourceBufferType(scene.mimeType);
             const sourceBuffer = this._source_buffer;
             const desiredOffset = scene.timelineStart - scene.mediaStart;
@@ -238,6 +245,69 @@ class AcademicSceneCompositionPlayer extends SceneCompositionPlayer {
                 }
             }
         });
+    }
+
+    _finalSceneBuffered() {
+        if (!this._scenes.length) {
+            return false;
+        }
+        const finalScene = this._scenes[this._scenes.length - 1];
+        return finalScene.segments.every((segment) =>
+            this._loaded_segments.has(finalScene.index + ':' + segment.index)
+        );
+    }
+
+    _maybeFinalizeEndOfStream() {
+        if (this._academic_eos_finalized || this._academic_eos_pending) {
+            return true;
+        }
+        if (!this._ready || !this._media_element || !this._media_source || !this._source_buffer) {
+            return false;
+        }
+        if (this._media_source.readyState !== 'open') {
+            return this._media_source.readyState === 'ended';
+        }
+
+        const remaining = this._duration - this.currentTime;
+        if (remaining > 0.35 || !this._finalSceneBuffered() || this._pending_segments.size > 0) {
+            return false;
+        }
+
+        this._academic_eos_pending = true;
+        this._enqueueAppend(async () => {
+            try {
+                if (!this._media_source || !this._source_buffer || this._media_source.readyState !== 'open') {
+                    return;
+                }
+                if (this._source_buffer.updating || !this._finalSceneBuffered() || this._pending_segments.size > 0) {
+                    return;
+                }
+                this._restoreLogicalDuration();
+                this._media_source.endOfStream();
+                this._academic_eos_finalized = true;
+            } finally {
+                this._academic_eos_pending = false;
+            }
+        }).catch((error) => {
+            this._academic_eos_pending = false;
+            this._emitError('END_OF_STREAM_FAILED', error);
+        });
+        return true;
+    }
+
+    _onTimeUpdate() {
+        super._onTimeUpdate();
+        this._maybeFinalizeEndOfStream();
+    }
+
+    _onWaiting() {
+        if (!this._ready) {
+            return;
+        }
+        if (this._maybeFinalizeEndOfStream()) {
+            return;
+        }
+        super._onWaiting();
     }
 
     _cleanupOldBuffer() {
