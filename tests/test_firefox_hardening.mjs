@@ -12,7 +12,6 @@ page.on('console', (message) => {
 try {
   await page.goto(`${base}/demo/academic-scene.html`, { waitUntil: 'networkidle' });
 
-  // Track topology must be stable across one multiplexed SourceBuffer.
   await page.evaluate(async () => {
     const manifest = await fetch('.ci-scenes/compilation.json').then((response) => response.json());
     manifest.scenes[1].mimeType = manifest.scenes[1].mimeType.replace(/,\s*mp4a\.40\.2/i, '');
@@ -31,13 +30,11 @@ try {
   }
   await page.evaluate(() => player.destroy());
 
-  // Hold media requests long enough to destroy the first generation mid-load.
   await page.route('**/*.m4s', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 1200));
     try {
       await route.continue();
     } catch (e) {
-      // Aborted requests are expected when the first player is destroyed.
     }
   });
 
@@ -96,8 +93,6 @@ try {
     throw new Error(`titles disabled but replacement has ${replacement.textTracks} TextTrack(s)`);
   }
 
-  // Move near the end, evict only the completed first Scene, then verify a
-  // backward seek reloads its three fragments and decodes it again.
   await page.evaluate(() => {
     video.currentTime = player.duration - 0.25;
     player._cleanupOldBuffer();
@@ -126,8 +121,6 @@ try {
     throw new Error(`media error after backward reload: ${JSON.stringify(afterReload.mediaError)}`);
   }
 
-  // Arrow keys belong to Scene navigation only when the native video itself is
-  // the active player context. Other page controls must keep their arrows.
   await page.locator('#load').focus();
   await page.keyboard.press('ArrowRight');
   await page.waitForTimeout(100);
@@ -144,8 +137,6 @@ try {
     throw new Error(`ArrowRight did not navigate Scene while video was focused: ${videoFocusedScene}`);
   }
 
-  // Native Scene titles are opt-in. Prove the cue contract separately from the
-  // pristine titles-disabled/VSR path above.
   await page.evaluate(() => player.destroy());
   const titlePage = await browser.newPage();
   const titleErrors = [];
@@ -191,8 +182,12 @@ try {
   if (titles.trackCount !== 1 || titles.mode !== 'showing') {
     throw new Error(`unexpected native Scene title track: ${JSON.stringify(titles)}`);
   }
-  if (titles.cues.length !== 2 || titles.cues[0].text !== 'Scene 1' || titles.cues[1].text !== 'Scene 2') {
-    throw new Error(`unexpected Scene title cues: ${JSON.stringify(titles.cues)}`);
+  const expectedTitles = [
+    'Scene: Scene 1\nClip: Synthetic Clip 1',
+    'Scene: Scene 2\nClip: Synthetic Clip 2'
+  ];
+  if (titles.cues.length !== 2 || titles.cues[0].text !== expectedTitles[0] || titles.cues[1].text !== expectedTitles[1]) {
+    throw new Error(`unexpected Scene/source title cues: ${JSON.stringify(titles.cues)}`);
   }
   if (!(titles.cues[0].startTime === 0 && titles.cues[1].startTime > titles.cues[0].startTime)) {
     throw new Error(`unexpected Scene cue timing: ${JSON.stringify(titles.cues)}`);
