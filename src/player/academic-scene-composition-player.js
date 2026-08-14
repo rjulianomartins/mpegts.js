@@ -344,11 +344,46 @@ class AcademicSceneCompositionPlayer extends SceneCompositionPlayer {
         }
     }
 
+    _sceneTitleCueText(scene) {
+        const metadata = scene && scene.metadata ? scene.metadata : {};
+        const sourceTitle = metadata.sourceTitle != null ? String(metadata.sourceTitle).trim() : '';
+        if (!sourceTitle) {
+            return scene.title;
+        }
+        const sourceKind = metadata.sourceKind != null && String(metadata.sourceKind).trim()
+            ? String(metadata.sourceKind).trim()
+            : 'Source';
+        return 'Scene: ' + scene.title + '\n' + sourceKind + ': ' + sourceTitle;
+    }
+
     _installTitleTrack() {
-        if (!this._config.showSceneTitles) {
+        if (!this._config.showSceneTitles || !this._media_element || !this._scenes.length || this._title_track) {
             return;
         }
-        super._installTitleTrack();
+        try {
+            const track = this._media_element.addTextTrack(
+                'subtitles',
+                'Scenes',
+                this._config.sceneTitleLanguage || 'en'
+            );
+            track.mode = 'showing';
+            this._scenes.forEach((scene) => {
+                const configuredDuration = Number(this._config.sceneTitleCueDuration);
+                const cueEnd = configuredDuration > 0
+                    ? Math.min(scene.timelineEnd, scene.timelineStart + configuredDuration)
+                    : scene.timelineEnd;
+                const cue = new VTTCue(
+                    scene.timelineStart,
+                    Math.max(scene.timelineStart + 0.050, cueEnd),
+                    this._sceneTitleCueText(scene)
+                );
+                cue.id = scene.id;
+                track.addCue(cue);
+            });
+            this._title_track = track;
+        } catch (error) {
+            this._emitError('TEXT_TRACK_FAILED', error);
+        }
     }
 
     _emitError(code, error) {
