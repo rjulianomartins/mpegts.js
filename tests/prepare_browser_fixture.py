@@ -40,14 +40,16 @@ def main():
             "--start", "0", "--end", "5",
             "--id", f"scene-{index}", "--title", f"Scene {index}",
             "--source-id", f"source-{index}",
-            "--url-prefix", f".ci-scenes/scene-{index}",
+            # Deliberately relative to compilation.json, not the demo page.
+            # The player must resolve these URLs against the manifest URL.
+            "--url-prefix", f"scene-{index}",
             "--segment-seconds", "2"
         ])
         scenes.append(json.loads((scene_dir / "scene.json").read_text(encoding="utf-8")))
 
     manifest = {"type": "scenes", "title": "CI Compilation", "scenes": scenes}
     (root / "compilation.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({"ok": True, "scenes": len(scenes)}))
+    print(json.dumps({"ok": True, "scenes": len(scenes), "nestedRelativeUrls": True}))
 
 
 if __name__ == "__main__":
