@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import math
 import shutil
 import subprocess
 import sys
@@ -74,10 +75,24 @@ def main():
         if stream_map.get("audio") != "aac":
             raise SystemExit("synthetic source audio is not AAC")
 
+        playlist_probe = json.loads(run([
+            "ffprobe", "-v", "error", "-show_entries", "format=start_time,duration",
+            "-of", "json", str(output / "scene.m3u8")
+        ]).stdout)
+        fmt = playlist_probe.get("format") or {}
+        actual_media_start = float(fmt.get("start_time") or 0.0)
+        declared_media_start = float(scene.get("mediaStart") or 0.0)
+        if not math.isclose(declared_media_start, actual_media_start, abs_tol=0.01):
+            raise SystemExit(
+                f"scene mediaStart mismatch: manifest={declared_media_start:.6f} "
+                f"ffprobe={actual_media_start:.6f}"
+            )
+
         print(json.dumps({
             "ok": True,
             "segments": len(segments),
             "duration": scene.get("duration"),
+            "mediaStart": declared_media_start,
             "mimeType": scene.get("mimeType")
         }))
 
