@@ -2,6 +2,7 @@
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -36,7 +37,7 @@ def main():
     for index, source in enumerate((source_a, source_b), start=1):
         scene_dir = root / f"scene-{index}"
         run([
-            "python3", str(helper), str(source), str(scene_dir),
+            sys.executable, str(helper), str(source), str(scene_dir),
             "--start", "0", "--end", "5",
             "--id", f"scene-{index}", "--title", f"Scene {index}",
             "--source-id", f"source-{index}",
