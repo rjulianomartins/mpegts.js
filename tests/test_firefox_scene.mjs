@@ -36,6 +36,8 @@ async function snapshot() {
         networkState: v.networkState,
         duration: v.duration,
         currentTime: v.currentTime,
+        width: v.videoWidth,
+        height: v.videoHeight,
         currentSrc: v.currentSrc,
         error: mediaError
       } : null,
@@ -69,8 +71,11 @@ try {
 
   const initial = await page.evaluate(() => ({
     duration: video.duration,
+    logicalDuration: player.duration,
     sceneCount: player.sceneCount,
     currentSceneIndex: player.currentSceneIndex,
+    width: video.videoWidth,
+    height: video.videoHeight,
     buffered: Array.from({ length: video.buffered.length }, (_, i) => [video.buffered.start(i), video.buffered.end(i)])
   }));
 
@@ -80,6 +85,9 @@ try {
   if (initial.sceneCount !== 2) {
     throw new Error(`unexpected scene count ${initial.sceneCount}`);
   }
+  if (initial.width !== 640 || initial.height !== 360) {
+    throw new Error(`unexpected first Scene resolution ${initial.width}x${initial.height}`);
+  }
 
   await page.click('#play');
   await page.waitForFunction(() => video.currentTime > 0.4, null, { timeout: 15000 });
@@ -87,6 +95,7 @@ try {
   const boundary = await page.evaluate(() => player.getTimeline()[1].timelineStart);
   await page.evaluate((t) => { player.currentTime = t + 0.75; }, boundary);
   await page.waitForFunction(() => player.currentSceneIndex === 1, null, { timeout: 15000 });
+  await page.waitForFunction(() => video.videoWidth === 854 && video.videoHeight === 480, null, { timeout: 15000 });
 
   const forward = await page.evaluate(() => ({
     currentTime: video.currentTime,
@@ -100,6 +109,7 @@ try {
 
   await page.evaluate(() => { player.currentTime = 0.75; });
   await page.waitForFunction(() => player.currentSceneIndex === 0, null, { timeout: 15000 });
+  await page.waitForFunction(() => video.videoWidth === 640 && video.videoHeight === 360, null, { timeout: 15000 });
 
   await page.evaluate(() => {
     player.destroy();
