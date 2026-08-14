@@ -21,20 +21,39 @@ def probe_codecs(source):
         raise SystemExit('V1 scene preparation requires H.264 video.')
     video = streams[0]
 
+    video_profile = str(video.get('profile') or '').strip().lower()
+    h264_profiles = {
+        'constrained baseline': ('42', 'E0'),
+        'baseline': ('42', '00'),
+        'main': ('4D', '00'),
+        'high': ('64', '00'),
+    }
+    if video_profile not in h264_profiles:
+        raise SystemExit(
+            'V1 scene preparation supports only H.264 Constrained Baseline, Baseline, Main, or High profiles.'
+        )
+
+    try:
+        level = int(video.get('level'))
+    except (TypeError, ValueError):
+        raise SystemExit('Unable to determine the H.264 level for the Scene source.')
+    if level <= 0 or level > 255:
+        raise SystemExit('Invalid H.264 level reported by ffprobe.')
+
     audio_payload = run_json([
         'ffprobe', '-v', 'error', '-select_streams', 'a:0',
-        '-show_entries', 'stream=codec_name', '-of', 'json', str(source)
+        '-show_entries', 'stream=codec_name,profile', '-of', 'json', str(source)
     ])
     audio_streams = audio_payload.get('streams') or []
     audio_codec = audio_streams[0].get('codec_name') if audio_streams else None
+    audio_profile = str(audio_streams[0].get('profile') or '').strip().lower() if audio_streams else ''
     if audio_codec not in (None, 'aac'):
         raise SystemExit('V1 scene preparation requires AAC audio or no audio.')
+    if audio_codec == 'aac' and audio_profile not in ('lc', 'aac lc'):
+        raise SystemExit('V1 scene preparation supports AAC-LC audio only.')
 
-    profile = str(video.get('profile') or '').lower()
-    profile_idc = '64' if 'high' in profile else ('4D' if 'main' in profile else '42')
-    constraints = 'E0' if 'constrained baseline' in profile else '00'
-    level = int(video.get('level') or 30)
-    level_hex = format(max(0, min(level, 255)), '02X')
+    profile_idc, constraints = h264_profiles[video_profile]
+    level_hex = format(level, '02X')
     codecs = 'avc1.' + profile_idc + constraints + level_hex
     if audio_codec == 'aac':
         codecs += ', mp4a.40.2'
