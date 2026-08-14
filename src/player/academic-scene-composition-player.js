@@ -204,6 +204,45 @@ class AcademicSceneCompositionPlayer extends SceneCompositionPlayer {
         return data;
     }
 
+    async _loadAndAppendSegment(scene, segment) {
+        const initData = scene.initSegment ? await this._getInitData(scene.initSegment) : null;
+        const mediaData = await this._fetchArrayBuffer(segment);
+
+        return this._enqueueAppend(async () => {
+            await this._ensureSourceBufferType(scene.mimeType);
+            const sourceBuffer = this._source_buffer;
+            const desiredOffset = scene.timelineStart - scene.mediaStart;
+            if (Math.abs(sourceBuffer.timestampOffset - desiredOffset) > 0.0001) {
+                sourceBuffer.timestampOffset = desiredOffset;
+            }
+
+            // Keep each Scene's coded frames inside its authored logical range.
+            // This prevents codec delay or fragment tails from extending the native
+            // Firefox Compilation timeline beyond the declared Scene duration.
+            sourceBuffer.appendWindowStart = Math.max(0, scene.timelineStart);
+            sourceBuffer.appendWindowEnd = Math.max(scene.timelineStart + 0.001, scene.timelineEnd);
+
+            try {
+                if (initData && this._active_init_key !== scene.initKey) {
+                    await this._appendBuffer(initData);
+                    this._active_init_key = scene.initKey;
+                }
+
+                await this._appendBuffer(mediaData);
+                this._restoreLogicalDuration();
+            } finally {
+                if (this._source_buffer && !this._source_buffer.updating) {
+                    try {
+                        this._source_buffer.appendWindowStart = 0;
+                        this._source_buffer.appendWindowEnd = Number.POSITIVE_INFINITY;
+                    } catch (e) {
+                        // Ignore teardown/changeType races.
+                    }
+                }
+            }
+        });
+    }
+
     _installTitleTrack() {
         if (!this._config.showSceneTitles) {
             return;
