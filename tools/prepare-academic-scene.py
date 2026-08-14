@@ -128,8 +128,8 @@ def main():
     if args.keyframe_tolerance < 0:
         raise SystemExit('--keyframe-tolerance must be zero or greater')
 
-    source = Path(args.source)
-    output = Path(args.output_dir)
+    source = Path(args.source).resolve()
+    output = Path(args.output_dir).resolve()
     output.mkdir(parents=True, exist_ok=True)
 
     mime_type = probe_codecs(source)
@@ -138,7 +138,6 @@ def main():
         raise SystemExit('Nearest accepted keyframe is not before requested Scene end.')
 
     playlist = output / 'scene.m3u8'
-    segment_pattern = output / 'segment-%05d.m4s'
 
     command = [
         'ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin',
@@ -150,10 +149,10 @@ def main():
         '-hls_playlist_type', 'vod',
         '-hls_flags', 'independent_segments',
         '-hls_fmp4_init_filename', 'init.mp4',
-        '-hls_segment_filename', str(segment_pattern),
-        str(playlist)
+        '-hls_segment_filename', 'segment-%05d.m4s',
+        'scene.m3u8'
     ]
-    subprocess.run(command, check=True)
+    subprocess.run(command, check=True, cwd=output)
 
     durations, names = parse_playlist(playlist)
     cursor = 0.0
