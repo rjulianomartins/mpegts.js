@@ -43,8 +43,13 @@ def main():
         if not manifest.exists():
             raise SystemExit("scene.json was not generated")
 
-        run([sys.executable, str(validator), str(manifest)])
         scene = json.loads(manifest.read_text(encoding="utf-8"))
+        wrapped_manifest = tmp / "compilation.json"
+        wrapped_manifest.write_text(
+            json.dumps({"type": "scenes", "scenes": [scene]}, indent=2) + "\n",
+            encoding="utf-8"
+        )
+        run([sys.executable, str(validator), str(wrapped_manifest)])
 
         init_file = output / "init.mp4"
         if not init_file.exists() or init_file.stat().st_size == 0:
