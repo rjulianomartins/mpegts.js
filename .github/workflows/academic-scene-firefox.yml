@@ -30,6 +30,7 @@ jobs:
           python3 -m http.server 8765 --bind 127.0.0.1 >/tmp/scene-http.log 2>&1 &
           echo $! > /tmp/scene-http.pid
       - run: node tests/test_firefox_scene.mjs
+      - run: node tests/test_firefox_hardening.mjs
       - name: Stop local server
         if: always()
         run: kill $(cat /tmp/scene-http.pid) || true
