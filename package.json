@@ -20,6 +20,8 @@
   "scripts": {
     "build": "webpack --mode=production --progress",
     "build:debug": "webpack --mode=development --progress",
+    "build:scene": "webpack --config webpack.scene.config.js --mode=production --progress",
+    "build:scene:debug": "webpack --config webpack.scene.config.js --mode=development --progress",
     "watch": "webpack --mode=development --progress --watch",
     "serve": "webpack serve --mode=development --progress"
   },

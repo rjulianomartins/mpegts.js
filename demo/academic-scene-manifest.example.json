@@ -1,0 +1,38 @@
+{
+  "type": "scenes",
+  "title": "Academic Scene Compilation",
+  "scenes": [
+    {
+      "id": "scene-a",
+      "title": "Scene A",
+      "sourceId": "source-a",
+      "sourceStart": 0,
+      "sourceEnd": 12,
+      "duration": 12,
+      "mimeType": "video/mp4; codecs=\"avc1.640028, mp4a.40.2\"",
+      "mediaStart": 0,
+      "initSegment": {"url": "scene-a/init.mp4"},
+      "segments": [
+        {"url": "scene-a/segment-00000.m4s", "start": 0, "duration": 4},
+        {"url": "scene-a/segment-00001.m4s", "start": 4, "duration": 4},
+        {"url": "scene-a/segment-00002.m4s", "start": 8, "duration": 4}
+      ]
+    },
+    {
+      "id": "scene-b",
+      "title": "Scene B",
+      "sourceId": "source-b",
+      "sourceStart": 90,
+      "sourceEnd": 102,
+      "duration": 12,
+      "mimeType": "video/mp4; codecs=\"avc1.640028, mp4a.40.2\"",
+      "mediaStart": 0,
+      "initSegment": {"url": "scene-b/init.mp4"},
+      "segments": [
+        {"url": "scene-b/segment-00000.m4s", "start": 0, "duration": 4},
+        {"url": "scene-b/segment-00001.m4s", "start": 4, "duration": 4},
+        {"url": "scene-b/segment-00002.m4s", "start": 8, "duration": 4}
+      ]
+    }
+  ]
+}
