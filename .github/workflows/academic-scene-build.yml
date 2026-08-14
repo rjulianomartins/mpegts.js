@@ -1,9 +1,8 @@
 name: Academic Scene MSE build
 
 on:
-  push:
-    branches: [academic-scene-mse-poc]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
