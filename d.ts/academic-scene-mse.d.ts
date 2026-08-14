@@ -13,8 +13,20 @@ export interface AcademicScene {
     id: string;
     title: string;
     sourceId?: string;
+    /** Actual prepared source boundary used by playback. */
     sourceStart?: number;
+    /** Actual prepared source boundary derived from the prepared Scene duration. */
     sourceEnd?: number;
+    /** User-requested source boundary before keyframe snapping. */
+    requestedSourceStart?: number;
+    /** User-requested source end before stream-copy preparation. */
+    requestedSourceEnd?: number;
+    /** Accepted keyframe-aligned source boundary. */
+    actualSourceStart?: number;
+    /** Actual end represented by the prepared Scene. */
+    actualSourceEnd?: number;
+    /** actualSourceStart - requestedSourceStart. */
+    startBoundaryDelta?: number;
     mediaStart?: number;
     duration: number;
     mimeType: string;
@@ -37,6 +49,7 @@ export interface ScenePlayerConfig {
     preloadNextSceneThreshold?: number;
     preloadNextSceneSeconds?: number;
     maxBufferBehindSeconds?: number;
+    cleanupIntervalSeconds?: number;
     keyboardSceneNavigation?: boolean;
     showSceneTitles?: boolean;
     sceneTitleCueDuration?: number;
