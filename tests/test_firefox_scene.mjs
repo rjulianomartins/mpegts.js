@@ -24,7 +24,8 @@ async function snapshot() {
         loadError: player._load_error ? String(player._load_error.message || player._load_error) : null,
         ready: player._ready === true,
         activeMimeType: player._active_mime_type || null,
-        loadedSegments: player._loaded_segments ? player._loaded_segments.size : null
+        loadedSegments: player._loaded_segments ? player._loaded_segments.size : null,
+        mediaSourceState: player._media_source ? player._media_source.readyState : null
       } : null;
     } catch (e) {
       playerState = { inspectError: String(e) };
@@ -40,6 +41,8 @@ async function snapshot() {
         height: v.videoHeight,
         textTracks: v.textTracks.length,
         currentSrc: v.currentSrc,
+        ended: v.ended,
+        paused: v.paused,
         error: mediaError
       } : null,
       player: playerState
@@ -118,6 +121,26 @@ try {
   await page.waitForFunction(() => player.currentSceneIndex === 0, null, { timeout: 15000 });
   await page.waitForFunction(() => video.videoWidth === 640 && video.videoHeight === 360, null, { timeout: 15000 });
 
+  // Natural Compilation completion must finalize the MediaSource instead of
+  // leaving Firefox in a permanent waiting/spinner state at the logical end.
+  await page.evaluate(() => {
+    player.currentTime = Math.max(0, player.duration - 0.30);
+    void player.play();
+  });
+  await page.waitForFunction(() => video.ended === true, null, { timeout: 10000 });
+  const completion = await page.evaluate(() => ({
+    ended: video.ended,
+    paused: video.paused,
+    currentTime: video.currentTime,
+    duration: video.duration,
+    mediaSourceState: player._media_source ? player._media_source.readyState : null,
+    eosFinalized: player._academic_eos_finalized === true,
+    mediaError: video.error ? { code: video.error.code, message: video.error.message || '' } : null
+  }));
+  if (!completion.ended || completion.mediaSourceState !== 'ended' || !completion.eosFinalized || completion.mediaError) {
+    throw new Error(`unexpected Compilation completion state: ${JSON.stringify(completion)}`);
+  }
+
   await page.evaluate(() => {
     player.destroy();
     player = new AcademicSceneMSE.SceneCompositionPlayer({
@@ -142,7 +165,7 @@ try {
     throw new Error(`browser errors: ${errors.join(' | ')}`);
   }
 
-  console.log(JSON.stringify({ ok: true, initial, forward }));
+  console.log(JSON.stringify({ ok: true, initial, forward, completion }));
 } finally {
   await browser.close();
 }
