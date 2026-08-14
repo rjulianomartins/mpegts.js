@@ -38,6 +38,7 @@ async function snapshot() {
         currentTime: v.currentTime,
         width: v.videoWidth,
         height: v.videoHeight,
+        textTracks: v.textTracks.length,
         currentSrc: v.currentSrc,
         error: mediaError
       } : null,
@@ -67,6 +68,9 @@ try {
   }
   if (!firstState.player?.ready) {
     throw new Error(`player did not become ready: ${JSON.stringify({ state: firstState, errors }, null, 2)}`);
+  }
+  if (firstState.media?.textTracks !== 0) {
+    throw new Error(`Scene titles disabled but ${firstState.media?.textTracks} TextTrack(s) exist`);
   }
 
   const initial = await page.evaluate(() => ({
@@ -126,6 +130,10 @@ try {
   });
 
   await page.waitForFunction(() => player && player._ready === true && player.sceneCount === 2 && Number.isFinite(video.duration) && video.duration > 0, null, { timeout: 30000 });
+  const reloadedTextTracks = await page.evaluate(() => video.textTracks.length);
+  if (reloadedTextTracks !== 0) {
+    throw new Error(`reloaded player created ${reloadedTextTracks} TextTrack(s) with titles disabled`);
+  }
 
   if (errors.length) {
     throw new Error(`browser errors: ${errors.join(' | ')}`);
