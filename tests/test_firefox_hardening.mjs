@@ -144,6 +144,63 @@ try {
     throw new Error(`ArrowRight did not navigate Scene while video was focused: ${videoFocusedScene}`);
   }
 
+  // Native Scene titles are opt-in. Prove the cue contract separately from the
+  // pristine titles-disabled/VSR path above.
+  await page.evaluate(() => player.destroy());
+  const titlePage = await browser.newPage();
+  const titleErrors = [];
+  titlePage.on('pageerror', (error) => titleErrors.push(`pageerror: ${String(error)}`));
+  titlePage.on('console', (message) => {
+    if (message.type() === 'error') titleErrors.push(`console: ${message.text()}`);
+  });
+  await titlePage.goto(`${base}/demo/academic-scene.html`, { waitUntil: 'networkidle' });
+  await titlePage.evaluate(() => {
+    player = new AcademicSceneMSE.SceneCompositionPlayer({
+      type: 'scenes',
+      url: '.ci-scenes/compilation.json'
+    }, {
+      keyboardSceneNavigation: false,
+      showSceneTitles: true,
+      sceneTitleCueDuration: 4
+    });
+    player.attachMediaElement(video);
+    player.load();
+  });
+  await titlePage.waitForFunction(() => player && (player._ready === true || player._load_error != null), null, { timeout: 30000 });
+  const titles = await titlePage.evaluate(() => {
+    const track = video.textTracks[0];
+    const cues = track && track.cues ? Array.from(track.cues).map((cue) => ({
+      id: cue.id,
+      text: cue.text,
+      startTime: cue.startTime,
+      endTime: cue.endTime
+    })) : [];
+    return {
+      ready: player._ready === true,
+      error: player._load_error ? String(player._load_error.message || player._load_error) : null,
+      trackCount: video.textTracks.length,
+      mode: track ? track.mode : null,
+      cues
+    };
+  });
+  await titlePage.close();
+
+  if (!titles.ready || titles.error) {
+    throw new Error(`title-cue player failed: ${JSON.stringify(titles)}`);
+  }
+  if (titles.trackCount !== 1 || titles.mode !== 'showing') {
+    throw new Error(`unexpected native Scene title track: ${JSON.stringify(titles)}`);
+  }
+  if (titles.cues.length !== 2 || titles.cues[0].text !== 'Scene 1' || titles.cues[1].text !== 'Scene 2') {
+    throw new Error(`unexpected Scene title cues: ${JSON.stringify(titles.cues)}`);
+  }
+  if (!(titles.cues[0].startTime === 0 && titles.cues[1].startTime > titles.cues[0].startTime)) {
+    throw new Error(`unexpected Scene cue timing: ${JSON.stringify(titles.cues)}`);
+  }
+  if (titleErrors.length) {
+    throw new Error(`title browser errors: ${titleErrors.join(' | ')}`);
+  }
+
   if (browserErrors.length) {
     throw new Error(`browser errors: ${browserErrors.join(' | ')}`);
   }
@@ -154,7 +211,8 @@ try {
     replacement,
     afterEviction,
     afterReload,
-    keyboard: { unrelatedControlScene, videoFocusedScene }
+    keyboard: { unrelatedControlScene, videoFocusedScene },
+    titles
   }));
 } finally {
   await browser.close();
