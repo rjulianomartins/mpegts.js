@@ -2,7 +2,6 @@
 
 import argparse
 import json
-import re
 import subprocess
 from pathlib import Path
 
@@ -42,6 +41,36 @@ def probe_codecs(source):
     return 'video/mp4; codecs="' + codecs + '"'
 
 
+def probe_nearest_keyframe(source, requested_time, tolerance):
+    search_start = max(0.0, requested_time - tolerance - 0.5)
+    search_duration = max(1.0, (tolerance * 2.0) + 1.0)
+    payload = run_json([
+        'ffprobe', '-v', 'error', '-select_streams', 'v:0',
+        '-read_intervals', f'{search_start:.6f}%+{search_duration:.6f}',
+        '-show_entries', 'packet=pts_time,flags', '-of', 'json', str(source)
+    ])
+
+    candidates = []
+    for packet in payload.get('packets') or []:
+        if 'K' not in str(packet.get('flags') or ''):
+            continue
+        try:
+            timestamp = float(packet.get('pts_time'))
+        except (TypeError, ValueError):
+            continue
+        delta = timestamp - requested_time
+        if abs(delta) <= tolerance + 1e-6:
+            candidates.append((abs(delta), timestamp))
+
+    if not candidates:
+        raise SystemExit(
+            f'No video keyframe is within {tolerance:.3f}s of requested Scene start {requested_time:.3f}s.'
+        )
+
+    candidates.sort(key=lambda item: (item[0], item[1]))
+    return candidates[0][1]
+
+
 def parse_playlist(path):
     durations = []
     names = []
@@ -70,22 +99,31 @@ def main():
     parser.add_argument('--source-id', default='')
     parser.add_argument('--url-prefix', default='')
     parser.add_argument('--segment-seconds', type=float, default=4.0)
+    parser.add_argument('--keyframe-tolerance', type=float, default=1.0)
     args = parser.parse_args()
 
     if args.end <= args.start:
         raise SystemExit('--end must be greater than --start')
+    if args.start < 0:
+        raise SystemExit('--start must be zero or greater')
+    if args.keyframe_tolerance < 0:
+        raise SystemExit('--keyframe-tolerance must be zero or greater')
 
     source = Path(args.source)
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=True)
 
     mime_type = probe_codecs(source)
+    actual_start = probe_nearest_keyframe(source, args.start, args.keyframe_tolerance)
+    if actual_start >= args.end:
+        raise SystemExit('Nearest accepted keyframe is not before requested Scene end.')
+
     playlist = output / 'scene.m3u8'
     segment_pattern = output / 'segment-%05d.m4s'
 
     command = [
         'ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin',
-        '-ss', f'{args.start:.6f}', '-to', f'{args.end:.6f}', '-i', str(source),
+        '-ss', f'{actual_start:.6f}', '-to', f'{args.end:.6f}', '-i', str(source),
         '-map', '0:v:0', '-map', '0:a:0?', '-c', 'copy',
         '-avoid_negative_ts', 'make_zero',
         '-f', 'hls', '-hls_segment_type', 'fmp4',
@@ -114,12 +152,18 @@ def main():
         })
         cursor += duration
 
+    actual_end = actual_start + cursor
     scene = {
         'id': args.id,
         'title': args.title,
         'sourceId': args.source_id,
-        'sourceStart': args.start,
-        'sourceEnd': args.end,
+        'requestedSourceStart': round(args.start, 6),
+        'requestedSourceEnd': round(args.end, 6),
+        'actualSourceStart': round(actual_start, 6),
+        'actualSourceEnd': round(actual_end, 6),
+        'sourceStart': round(actual_start, 6),
+        'sourceEnd': round(actual_end, 6),
+        'startBoundaryDelta': round(actual_start - args.start, 6),
         'duration': round(cursor, 6),
         'mimeType': mime_type,
         'mediaStart': 0,
@@ -131,6 +175,9 @@ def main():
     print(json.dumps({
         'ok': True,
         'scene_id': args.id,
+        'requested_start': round(args.start, 3),
+        'actual_start': round(actual_start, 3),
+        'boundary_delta': round(actual_start - args.start, 3),
         'duration': round(cursor, 3),
         'segments': len(segments),
         'mime_type': mime_type
