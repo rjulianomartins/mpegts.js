@@ -1,0 +1,36 @@
+name: Academic Scene Firefox MSE
+
+on:
+  push:
+    branches: [academic-scene-mse-poc]
+  pull_request:
+
+jobs:
+  firefox-mse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Install Playwright Firefox
+        run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps firefox
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - run: npm run build:scene
+      - run: python3 tests/prepare_browser_fixture.py
+      - name: Start local server
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 >/tmp/scene-http.log 2>&1 &
+          echo $! > /tmp/scene-http.pid
+      - run: node tests/test_firefox_scene.mjs
+      - name: Stop local server
+        if: always()
+        run: kill $(cat /tmp/scene-http.pid) || true
